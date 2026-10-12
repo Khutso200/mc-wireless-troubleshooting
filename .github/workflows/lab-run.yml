@@ -1,0 +1,56 @@
+---
+# Manual run against the LAB controller.
+# GitHub-hosted runners cannot reach your controller, so this needs a self-hosted runner
+# on a machine inside your network, registered with the label "lab-network".
+name: Run playbook against lab (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      playbook:
+        description: Playbook to run
+        type: choice
+        required: true
+        options:
+          - client_status.yml
+          - ap_uplink_health.yml
+          - role_vlan_check.yml
+      extra_vars:
+        description: "Extra vars, e.g. client_mac=aa:bb:cc:dd:ee:ff expected_vlan=100"
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: [self-hosted, lab-network]
+    environment: lab
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run playbook
+        env:
+          ANSIBLE_VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
+          PLAYBOOK: ${{ inputs.playbook }}
+          EXTRA_VARS: ${{ inputs.extra_vars }}
+        run: |
+          set -euo pipefail
+          umask 077
+          vault_file="$(mktemp)"
+          trap 'rm -f "$vault_file"' EXIT
+          printf '%s' "$ANSIBLE_VAULT_PASSWORD" > "$vault_file"
+          ansible-galaxy collection install -r requirements.yml
+          ansible-playbook -i inventory/lab.yml "playbooks/$PLAYBOOK" \
+            --vault-password-file "$vault_file" \
+            ${EXTRA_VARS:+-e "$EXTRA_VARS"}
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: reports/
+          if-no-files-found: ignore

@@ -1,0 +1,94 @@
+---
+# Checks that APs are up on the controller and, optionally, which switch port an AP is plugged into.
+#
+#   ansible-playbook playbooks/ap_uplink_health.yml
+#   ansible-playbook playbooks/ap_uplink_health.yml -e ap_name=AP-Lobby-01
+#
+# With ap_name, the AP's LLDP neighbour is fetched: that gives you the switch and port to feed
+# into the switch repo's vlan_port_check.yml.
+- name: Mobility controller AP health
+  hosts: mobility_controllers
+  gather_facts: false
+  vars:
+    target_ap: "{{ ap_name | default('') }}"
+    report_dir: "{{ playbook_dir }}/../reports"
+
+  tasks:
+    - name: Make sure the reports folder exists
+      ansible.builtin.file:
+        path: "{{ report_dir }}"
+        state: directory
+        mode: "0750"
+      delegate_to: localhost
+      become: false
+      run_once: true
+
+    - name: Get the AP database
+      ansible.netcommon.cli_command:
+        command: show ap database
+      register: ap_database
+      failed_when: false
+
+    - name: Get active APs
+      ansible.netcommon.cli_command:
+        command: show ap active
+      register: ap_active
+      failed_when: false
+
+    - name: Get the LLDP neighbour of the chosen AP
+      ansible.netcommon.cli_command:
+        command: "show ap lldp neighbor ap-name {{ target_ap }}"
+      register: ap_lldp
+      failed_when: false
+      when: target_ap | length > 0
+
+    - name: Pick out APs that are not up
+      ansible.builtin.set_fact:
+        down_aps: >-
+          {{ (ap_database.stdout | default('')).splitlines()
+             | select('search', '(?i)\sdown\b')
+             | list }}
+        target_ap_line: >-
+          {{ (ap_database.stdout | default('')).splitlines()
+             | select('search', '^\s*' ~ (target_ap | regex_escape) ~ '\s')
+             | list | first | default('') }}
+
+    - name: Report APs that are down
+      ansible.builtin.debug:
+        msg: "{{ down_aps }}"
+      when: down_aps | length > 0
+
+    - name: Report that all APs are up
+      ansible.builtin.debug:
+        msg: "No AP is reported as down in 'show ap database'."
+      when: down_aps | length == 0
+
+    - name: Show the chosen AP's database line and switch neighbour
+      ansible.builtin.debug:
+        msg:
+          - "AP: {{ target_ap }}"
+          - "Database line: {{ target_ap_line | trim | default('not found in show ap database', true) }}"
+          - "LLDP neighbour: {{ ap_lldp.stdout | default('not available') }}"
+      when: target_ap | length > 0
+
+    - name: Save AP health report
+      ansible.builtin.copy:
+        content: |
+          === AP health: {{ inventory_hostname }} ===
+          Generated: {{ now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ') }}
+          APs reported down: {{ down_aps | length }}
+
+          --- show ap database ---
+          {{ ap_database.stdout | default('[command failed: ' ~ (ap_database.msg | default('no output')) ~ ']') }}
+
+          --- show ap active ---
+          {{ ap_active.stdout | default('[command failed: ' ~ (ap_active.msg | default('no output')) ~ ']') }}
+          {% if target_ap | length > 0 %}
+
+          --- show ap lldp neighbor ap-name {{ target_ap }} ---
+          {{ ap_lldp.stdout | default('[command failed: ' ~ (ap_lldp.msg | default('no output')) ~ ']') }}
+          {% endif %}
+        dest: "{{ report_dir }}/{{ inventory_hostname }}_ap_health.txt"
+        mode: "0640"
+      delegate_to: localhost
+      become: false

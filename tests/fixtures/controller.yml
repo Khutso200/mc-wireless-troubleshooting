@@ -1,0 +1,74 @@
+---
+# Canned AOS 8 output (representative, not captured from hardware).
+# Commands for the MAC aa:bb:cc:00:00:99 are deliberately absent: an unknown client.
+
+"show user-table mac aa:bb:cc:dd:ee:ff": |
+  Users
+  -----
+        IP           MAC                Name  Role         Age(d:h:m)  Auth  AP name      Essid
+  -------------  -----------------  ----  -----------  ----------  ----  -----------  -----
+  10.20.30.40    aa:bb:cc:dd:ee:ff        guest-logon  00:00:12    None  AP-Lobby-01  Guest
+  User Entries: 1/1
+
+"show user mac aa:bb:cc:dd:ee:ff": |
+  Name: , IP: 10.20.30.40, MAC: aa:bb:cc:dd:ee:ff, Age: 00:00:12
+  Role: guest-logon (how: ROLE_DERIVATION_DEFAULT), ACL: 78/0
+  Authentication: No, status: successful, method: N/A
+  AP name: AP-Lobby-01, Essid: Guest, Phy: HT
+  Current VLAN: 20, Forward mode: tunnel
+
+"show station-table mac aa:bb:cc:dd:ee:ff": |
+  Station Entries
+  ---------------
+  Name  IP Address   MAC                Name        Role         Age
+  ----  -----------  -----------------  ----------  -----------  -----
+        10.20.30.40  aa:bb:cc:dd:ee:ff  AP-Lobby-01 guest-logon  00:00:12
+
+"show user-table mac aa:bb:cc:dd:ee:01": |
+  Users
+  -----
+        IP           MAC                Name  Role   Age(d:h:m)  Auth  AP name      Essid
+  -------------  -----------------  ----  -----  ----------  ----  -----------  -----
+  10.20.100.15   aa:bb:cc:dd:ee:01        guest  00:05:00    None  AP-Lobby-01  Guest
+  User Entries: 1/1
+
+"show user mac aa:bb:cc:dd:ee:01": |
+  Name: , IP: 10.20.100.15, MAC: aa:bb:cc:dd:ee:01, Age: 00:05:00
+  Role: guest (how: ROLE_DERIVATION_AAA), ACL: 80/0
+  Current VLAN: 100, Forward mode: tunnel
+
+"show station-table mac aa:bb:cc:dd:ee:01": |
+  Station Entries
+  ---------------
+  Name  IP Address    MAC                Name         Role   Age
+  ----  ------------  -----------------  -----------  -----  -----
+        10.20.100.15  aa:bb:cc:dd:ee:01  AP-Lobby-01  guest  00:05:00
+
+"show vlan status": |
+  VLAN  Description   Ports
+  ----  ------------  -----------------
+  1     VLAN0001      GE0/0/0-3
+  20    STAFF         GE0/0/4
+  100   GUEST         GE0/0/5
+
+"show ap database": |
+  AP Database
+  -----------
+  Name         Group    AP Type  IP Address   Status          Flags  Switch IP   Standby IP
+  ----         -----    -------  -----------  --------------  -----  ----------  ----------
+  AP-Lobby-01  default  505      10.20.1.21   Up 3d:2h:11m    2      10.10.2.5   0.0.0.0
+  AP-Store-02  default  505      10.20.1.22   Down                   10.10.2.5   0.0.0.0
+  Total APs:2
+
+"show ap active": |
+  Active AP Table
+  ---------------
+  Name         Group    IP Address   11g Clients  11a Clients  AP Type  Flags
+  ----         -----    -----------  -----------  -----------  -------  -----
+  AP-Lobby-01  default  10.20.1.21   3            5            505      2
+
+"show ap lldp neighbor ap-name AP-Lobby-01": |
+  AP-Lobby-01 LLDP neighbor
+  Local Port  Chassis ID          Port ID  System Name
+  ----------  ------------------  -------  -----------
+  eth0        00:11:22:33:44:55   1/1/5    access-sw01

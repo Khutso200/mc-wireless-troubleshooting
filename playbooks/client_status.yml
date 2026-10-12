@@ -1,0 +1,118 @@
+---
+# Looks a client up on the mobility controller and says where it is in the connection process.
+#
+#   ansible-playbook playbooks/client_status.yml -e client_mac=aa:bb:cc:dd:ee:ff
+#
+# Optional: -e expected_role=guest to flag a client that has a different role.
+- name: Mobility controller client status
+  hosts: mobility_controllers
+  gather_facts: false
+  vars:
+    target_mac: "{{ client_mac | default('') | lower }}"
+    wanted_role: "{{ expected_role | default('') }}"
+    report_dir: "{{ playbook_dir }}/../reports"
+
+  tasks:
+    - name: Check required inputs
+      ansible.builtin.assert:
+        that:
+          - target_mac is match('^([0-9a-f]{2}:){5}[0-9a-f]{2}$')
+        fail_msg: "Pass the client MAC with -e client_mac=aa:bb:cc:dd:ee:ff (colon-separated)."
+        quiet: true
+
+    - name: Make sure the reports folder exists
+      ansible.builtin.file:
+        path: "{{ report_dir }}"
+        state: directory
+        mode: "0750"
+      delegate_to: localhost
+      become: false
+      run_once: true
+
+    - name: Look the client up in the user table
+      ansible.netcommon.cli_command:
+        command: "show user-table mac {{ target_mac }}"
+      register: user_table
+      failed_when: false
+
+    - name: Get detailed user information
+      ansible.netcommon.cli_command:
+        command: "show user mac {{ target_mac }}"
+      register: user_detail
+      failed_when: false
+
+    - name: Look the client up in the station table
+      ansible.netcommon.cli_command:
+        command: "show station-table mac {{ target_mac }}"
+      register: station_table
+      failed_when: false
+
+    - name: Work out where the client is and what role it has
+      ansible.builtin.set_fact:
+        in_user_table: "{{ (user_table.stdout | default('')) is search('(?i)' ~ (target_mac | regex_escape)) }}"
+        in_station_table: "{{ (station_table.stdout | default('')) is search('(?i)' ~ (target_mac | regex_escape)) }}"
+        found_role: >-
+          {{ (user_detail.stdout | default(''))
+             | regex_findall('(?i)\brole\s*[:=]\s*([^\s,]+)')
+             | first | default('') }}
+
+    - name: Evaluate the role
+      ansible.builtin.set_fact:
+        stuck_in_logon_role: "{{ found_role is search('(?i)logon') }}"
+        role_mismatch: "{{ (wanted_role | length > 0) and (found_role | length > 0) and (found_role | lower != wanted_role | lower) }}"
+        role_unreadable: "{{ (wanted_role | length > 0) and (in_user_table | bool) and (found_role | length == 0) }}"
+
+    - name: Client is not on the controller at all
+      ansible.builtin.debug:
+        msg: >-
+          {{ target_mac }} is not in the user table. If it is also missing from the station table, the client never
+          associated: check SSID visibility, AP status (ap_uplink_health.yml) and the AP's switch port VLAN.
+      when: not (in_user_table | bool)
+
+    - name: Client is associated but has no user entry
+      ansible.builtin.debug:
+        msg: "{{ target_mac }} is associated (station table) but has no user entry. Check authentication and the AAA profile on the SSID."
+      when:
+        - in_station_table | bool
+        - not (in_user_table | bool)
+
+    - name: Client appears stuck in a logon (captive portal) role
+      ansible.builtin.debug:
+        msg: >-
+          {{ target_mac }} is in a role containing 'logon', which usually means it is waiting at the captive portal.
+          If the splash page does not appear, check the client's VLAN and DHCP, DNS for the portal, and the portal redirect.
+      when: stuck_in_logon_role | bool
+
+    - name: Client role is not the expected one
+      ansible.builtin.debug:
+        msg: "ROLE MISMATCH: {{ target_mac }} has role '{{ found_role }}', expected '{{ wanted_role }}'."
+      when: role_mismatch | bool
+
+    - name: Role could not be read
+      ansible.builtin.debug:
+        msg: >-
+          Could not read the role from 'show user mac {{ target_mac }}'. Check the raw output
+          in the report and send it back so the pattern can be adjusted.
+      when: role_unreadable | bool
+
+    - name: Save client report
+      ansible.builtin.copy:
+        content: |
+          === Client status: {{ target_mac }} on {{ inventory_hostname }} ===
+          Generated: {{ now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ') }}
+          In user table: {{ in_user_table }}   In station table: {{ in_station_table }}
+          Role: {{ found_role | default('?', true) }}   Expected role: {{ wanted_role | default('-', true) }}
+          Looks like captive portal role: {{ stuck_in_logon_role }}
+
+          --- show user-table mac {{ target_mac }} ---
+          {{ user_table.stdout | default('[command failed: ' ~ (user_table.msg | default('no output')) ~ ']') }}
+
+          --- show user mac {{ target_mac }} ---
+          {{ user_detail.stdout | default('[command failed: ' ~ (user_detail.msg | default('no output')) ~ ']') }}
+
+          --- show station-table mac {{ target_mac }} ---
+          {{ station_table.stdout | default('[command failed: ' ~ (station_table.msg | default('no output')) ~ ']') }}
+        dest: "{{ report_dir }}/{{ inventory_hostname }}_{{ target_mac | replace(':', '-') }}_client_status.txt"
+        mode: "0640"
+      delegate_to: localhost
+      become: false

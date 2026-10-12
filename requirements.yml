@@ -1,0 +1,7 @@
+---
+# Installed with: ansible-galaxy collection install -r requirements.yml
+# community.network provides the "aruba" terminal plugin (prompt handling, paging off)
+# used for ArubaOS mobility controllers. Pin versions after your first successful run.
+collections:
+  - name: ansible.netcommon
+  - name: community.network

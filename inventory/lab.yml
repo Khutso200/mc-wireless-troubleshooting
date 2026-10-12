@@ -1,0 +1,8 @@
+---
+# Lab / test controller. Replace the example address with your own.
+all:
+  children:
+    mobility_controllers:
+      hosts:
+        lab-mc01:
+          ansible_host: 192.0.2.5

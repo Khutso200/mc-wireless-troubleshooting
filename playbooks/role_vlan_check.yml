@@ -1,0 +1,127 @@
+---
+# Verifies the role and VLAN a client was given on the mobility controller.
+# Typical use: a guest cannot get the splash page because the client landed in the wrong VLAN or role.
+#
+#   ansible-playbook playbooks/role_vlan_check.yml -e client_mac=aa:bb:cc:dd:ee:ff \
+#     -e expected_vlan=100 -e expected_role=guest
+#
+# Optional: -e fail_on_mismatch=true makes the run fail when the VLAN or role differs.
+- name: Mobility controller role and VLAN check
+  hosts: mobility_controllers
+  gather_facts: false
+  vars:
+    target_mac: "{{ client_mac | default('') | lower }}"
+    wanted_vlan: "{{ expected_vlan | default('') }}"
+    wanted_role: "{{ expected_role | default('') }}"
+    fail_on_mismatch: false
+    report_dir: "{{ playbook_dir }}/../reports"
+
+  tasks:
+    - name: Check required inputs
+      ansible.builtin.assert:
+        that:
+          - target_mac is match('^([0-9a-f]{2}:){5}[0-9a-f]{2}$')
+        fail_msg: "Pass the client MAC with -e client_mac=aa:bb:cc:dd:ee:ff (colon-separated)."
+        quiet: true
+
+    - name: Make sure the reports folder exists
+      ansible.builtin.file:
+        path: "{{ report_dir }}"
+        state: directory
+        mode: "0750"
+      delegate_to: localhost
+      become: false
+      run_once: true
+
+    - name: Get detailed user information
+      ansible.netcommon.cli_command:
+        command: "show user mac {{ target_mac }}"
+      register: user_detail
+      failed_when: false
+
+    - name: Get the user table entry
+      ansible.netcommon.cli_command:
+        command: "show user-table mac {{ target_mac }}"
+      register: user_table
+      failed_when: false
+
+    - name: Get the controller VLAN list
+      ansible.netcommon.cli_command:
+        command: show vlan status
+      register: vlan_status
+      failed_when: false
+
+    - name: Extract role and VLAN from the detail output
+      ansible.builtin.set_fact:
+        found_vlan: >-
+          {{ (user_detail.stdout | default(''))
+             | regex_findall('(?i)\bvlan\s*[:=]\s*(\d+)')
+             | first | default('') }}
+        found_role: >-
+          {{ (user_detail.stdout | default(''))
+             | regex_findall('(?i)\brole\s*[:=]\s*([^\s,]+)')
+             | first | default('') }}
+        client_found: "{{ (user_detail.stdout | default('')) is search('(?i)' ~ (target_mac | regex_escape)) }}"
+
+    - name: Evaluate findings
+      ansible.builtin.set_fact:
+        vlan_mismatch: "{{ client_found | bool and (wanted_vlan | string | length > 0) and (found_vlan | string != wanted_vlan | string) }}"
+        role_mismatch: "{{ client_found | bool and (wanted_role | length > 0) and (found_role | lower != wanted_role | lower) }}"
+
+    - name: Summarise findings
+      ansible.builtin.debug:
+        msg:
+          - "Client {{ target_mac }} on {{ inventory_hostname }}: {{ 'found' if client_found | bool else 'NOT found in the user table' }}"
+          - "Role: {{ found_role | default('could not parse', true) }}   (expected: {{ wanted_role | default('not given', true) }})"
+          - "VLAN: {{ found_vlan | default('could not parse', true) }}   (expected: {{ wanted_vlan | default('not given', true) }})"
+
+    - name: Flag VLAN mismatch
+      ansible.builtin.debug:
+        msg: >-
+          VLAN MISMATCH: client is on VLAN {{ found_vlan }}, expected {{ wanted_vlan }}. Check the SSID's VLAN assignment, the user role,
+          and that the AP's switch port carries this VLAN (use the switch repo's vlan_port_check.yml).
+      when: vlan_mismatch | bool
+
+    - name: Flag role mismatch
+      ansible.builtin.debug:
+        msg: >-
+          ROLE MISMATCH: client has role '{{ found_role }}', expected '{{ wanted_role }}'.
+          Check the AAA profile and role derivation rules.
+      when: role_mismatch | bool
+
+    - name: Warn if parsing found nothing
+      ansible.builtin.debug:
+        msg: >-
+          The client was found but the VLAN or role could not be parsed. Check the raw output
+          in the report and send it back so the patterns can be adjusted.
+      when:
+        - client_found | bool
+        - (found_vlan | length == 0) or (found_role | length == 0)
+
+    - name: Save role and VLAN report
+      ansible.builtin.copy:
+        content: |
+          === Role/VLAN check: {{ target_mac }} on {{ inventory_hostname }} ===
+          Generated: {{ now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ') }}
+          Found role: {{ found_role | default('?', true) }}   Expected role: {{ wanted_role | default('-', true) }}
+          Found VLAN: {{ found_vlan | default('?', true) }}   Expected VLAN: {{ wanted_vlan | default('-', true) }}
+
+          --- show user mac {{ target_mac }} ---
+          {{ user_detail.stdout | default('[command failed: ' ~ (user_detail.msg | default('no output')) ~ ']') }}
+
+          --- show user-table mac {{ target_mac }} ---
+          {{ user_table.stdout | default('[command failed: ' ~ (user_table.msg | default('no output')) ~ ']') }}
+
+          --- show vlan status ---
+          {{ vlan_status.stdout | default('[command failed: ' ~ (vlan_status.msg | default('no output')) ~ ']') }}
+        dest: "{{ report_dir }}/{{ inventory_hostname }}_{{ target_mac | replace(':', '-') }}_role_vlan.txt"
+        mode: "0640"
+      delegate_to: localhost
+      become: false
+
+    - name: Fail the run if requested and a mismatch was found
+      ansible.builtin.fail:
+        msg: "Mismatch for {{ target_mac }} (VLAN mismatch: {{ vlan_mismatch }}, role mismatch: {{ role_mismatch }})."
+      when:
+        - fail_on_mismatch | bool
+        - (vlan_mismatch | bool) or (role_mismatch | bool)

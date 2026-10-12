@@ -1,0 +1,12 @@
+# Diagnostic output contains client MAC addresses, IPs and user names
+reports/*
+!reports/.gitkeep
+
+# Never commit vault passwords or plaintext secrets
+.vault_pass*
+*.vault_pass
+inventory/group_vars/all/vault.yml.plain
+
+*.retry
+__pycache__/
+.ansible/

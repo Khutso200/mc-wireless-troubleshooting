@@ -1,0 +1,10 @@
+---
+# Production standalone mobility controller (AOS 8.13). Only use after the playbooks
+# have been proven in the lab:
+#   ansible-playbook -i inventory/production.yml playbooks/<name>.yml ...
+all:
+  children:
+    mobility_controllers:
+      hosts:
+        mc01:
+          ansible_host: 192.0.2.10

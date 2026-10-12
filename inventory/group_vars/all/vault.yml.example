@@ -1,0 +1,7 @@
+---
+# 1. Copy this file to vault.yml in the same folder
+# 2. Fill in the real values
+# 3. Encrypt it:  ansible-vault encrypt inventory/group_vars/all/vault.yml
+vault_mc_user: admin
+vault_mc_password: change-me
+vault_mc_enable_password: change-me

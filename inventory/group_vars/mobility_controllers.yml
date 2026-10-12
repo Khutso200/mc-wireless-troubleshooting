@@ -1,0 +1,9 @@
+---
+ansible_connection: ansible.netcommon.network_cli
+ansible_network_os: community.network.aruba
+ansible_user: "{{ vault_mc_user }}"
+ansible_password: "{{ vault_mc_password }}"
+ansible_become: true
+ansible_become_method: enable
+ansible_become_password: "{{ vault_mc_enable_password }}"
+ansible_command_timeout: 60
