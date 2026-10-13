@@ -3,7 +3,7 @@
 Read-only diagnostic playbooks for a standalone Aruba mobility controller running AOS 8.x (written for 8.13),
 driven over SSH (`network_cli`). Nothing in here changes controller configuration.
 
-This repo is deliberately separate from the AOS-CX switch repo (`aoscx-switch-troubleshooting`).
+This repo is deliberately separate from the AOS-CX switch repo (`Aruba-aoscx-switch-troubleshooting`).
 
 | Playbook | Use it when |
 |---|---|
@@ -22,40 +22,53 @@ pip install ansible ansible-lint yamllint
 ansible-galaxy collection install -r requirements.yml
 ```
 
-1. Edit `inventory/lab.yml` (and later `inventory/production.yml`) with your controller address.
-2. Create the encrypted credentials file:
+1. Edit `inventory/lab.yml` and `inventory/production.yml` with your real controller address.
+   The addresses shipped in the repo (`192.0.2.x`) are documentation placeholders.
+2. Create the credentials file (plain text, no Ansible Vault):
 
    ```bash
-   cp inventory/group_vars/all/vault.yml.example inventory/group_vars/all/vault.yml
-   # edit it, then:
-   ansible-vault encrypt inventory/group_vars/all/vault.yml
+   cp inventory/group_vars/all/credentials.yml.example inventory/group_vars/all/credentials.yml
+   chmod 600 inventory/group_vars/all/credentials.yml
+   # edit it and set mc_user, mc_password and mc_enable_password
    ```
 
 3. Use a read-only account on the controller.
+
+### About plain-text credentials
+
+`credentials.yml` is listed in `.gitignore` so it is never committed, and CI fails if a file with that name is ever tracked.
+Keep it only on the machine that runs the playbooks, keep it `chmod 600`, and never paste it into issues or chat.
+Only `credentials.yml.example` (with placeholder values) lives in git. Ansible Vault can be added back later without changing the playbooks.
+
+If this repository is public, do not commit your real controller or switch management IPs into `inventory/production.yml`; keep the repo private or keep the real inventory out of git.
 
 ## Running
 
 ```bash
 # Where is this client stuck?
-ansible-playbook playbooks/client_status.yml -e client_mac=aa:bb:cc:dd:ee:ff --ask-vault-pass
+ansible-playbook playbooks/client_status.yml -e client_mac=aa:bb:cc:dd:ee:ff
 
 # Did the guest client get the right role and VLAN?
 ansible-playbook playbooks/role_vlan_check.yml -e client_mac=aa:bb:cc:dd:ee:ff \
-  -e expected_vlan=100 -e expected_role=guest --ask-vault-pass
+  -e expected_vlan=100 -e expected_role=guest
 
 # Are all APs up? And which switch port is this AP on?
-ansible-playbook playbooks/ap_uplink_health.yml -e ap_name=AP-Lobby-01 --ask-vault-pass
+ansible-playbook playbooks/ap_uplink_health.yml -e ap_name=AP-Lobby-01
 ```
 
-Production is always explicit: add `-i inventory/production.yml`.
+Production is always explicit: add `-i inventory/production.yml`, for example:
+
+```bash
+ansible-playbook -i inventory/production.yml playbooks/client_status.yml -e client_mac=aa:bb:cc:dd:ee:ff
+```
 
 Typical guest-splash workflow across both repos: `client_status.yml` shows the client is in a logon role or missing,
 `ap_uplink_health.yml -e ap_name=...` tells you the switch and port, then the switch repo's `vlan_port_check.yml` confirms the VLAN on that port.
 
 ## GitHub Actions
 
-* `ci.yml` runs on every push and pull request: yamllint, ansible-lint, a syntax check of every playbook, and the offline functional tests. It never touches the controller.
-* `lab-run.yml` is a manual workflow that runs one playbook against the lab controller. GitHub-hosted runners cannot reach your network, so register a self-hosted runner inside it with the label `lab-network`, create a `lab` environment in the repo settings, and add the vault password as the secret `ANSIBLE_VAULT_PASSWORD`. The encrypted `vault.yml` must be committed for this to work.
+* `ci.yml` runs on every push and pull request: a check that no credentials file is committed, yamllint, ansible-lint, a syntax check of every playbook, and the offline functional tests. It never touches the controller.
+* `lab-run.yml` is a manual workflow that runs one playbook against the lab controller. GitHub-hosted runners cannot reach your network, so register a self-hosted runner inside it with the label `lab-network`, create a `lab` environment in the repo settings, and add the secrets `MC_USER`, `MC_PASSWORD` and `MC_ENABLE_PASSWORD` to that environment. The workflow writes them to the git-ignored `credentials.yml` for the duration of the run and deletes the file afterwards.
 
 Suggested path to production: develop on a branch, let CI pass, run against the lab, merge to `main`, then run against production with `-i inventory/production.yml`.
 

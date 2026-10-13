@@ -2,6 +2,7 @@
 # Manual run against the LAB controller.
 # GitHub-hosted runners cannot reach your controller, so this needs a self-hosted runner
 # on a machine inside your network, registered with the label "lab-network".
+# Credentials come from the secrets MC_USER, MC_PASSWORD and MC_ENABLE_PASSWORD of the "lab" environment.
 name: Run playbook against lab (manual)
 
 on:
@@ -33,18 +34,20 @@ jobs:
 
       - name: Run playbook
         env:
-          ANSIBLE_VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
+          MC_USER: ${{ secrets.MC_USER }}
+          MC_PASSWORD: ${{ secrets.MC_PASSWORD }}
+          MC_ENABLE_PASSWORD: ${{ secrets.MC_ENABLE_PASSWORD }}
           PLAYBOOK: ${{ inputs.playbook }}
           EXTRA_VARS: ${{ inputs.extra_vars }}
         run: |
           set -euo pipefail
           umask 077
-          vault_file="$(mktemp)"
-          trap 'rm -f "$vault_file"' EXIT
-          printf '%s' "$ANSIBLE_VAULT_PASSWORD" > "$vault_file"
+          creds="inventory/group_vars/all/credentials.yml"
+          trap 'rm -f "$creds"' EXIT
+          # JSON is valid YAML, so quotes and special characters in passwords are safe.
+          python3 -c 'import json, os; print(json.dumps({"mc_user": os.environ["MC_USER"], "mc_password": os.environ["MC_PASSWORD"], "mc_enable_password": os.environ["MC_ENABLE_PASSWORD"]}))' > "$creds"
           ansible-galaxy collection install -r requirements.yml
           ansible-playbook -i inventory/lab.yml "playbooks/$PLAYBOOK" \
-            --vault-password-file "$vault_file" \
             ${EXTRA_VARS:+-e "$EXTRA_VARS"}
 
       - name: Upload reports

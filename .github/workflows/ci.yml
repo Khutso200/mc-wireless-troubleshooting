@@ -19,6 +19,13 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Make sure no plain-text credentials file is committed
+        run: |
+          if git ls-files | grep -E '(^|/)credentials\.yml$'; then
+            echo "credentials.yml must never be committed (only credentials.yml.example)"
+            exit 1
+          fi
+
       - name: Install tooling
         run: |
           python -m pip install --upgrade pip

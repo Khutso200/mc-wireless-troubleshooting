@@ -2,10 +2,9 @@
 reports/*
 !reports/.gitkeep
 
-# Never commit vault passwords or plaintext secrets
-.vault_pass*
-*.vault_pass
-inventory/group_vars/all/vault.yml.plain
+# Plain-text credentials must never be committed (only credentials.yml.example is tracked)
+inventory/group_vars/all/credentials.yml
+**/credentials.yml
 
 *.retry
 __pycache__/

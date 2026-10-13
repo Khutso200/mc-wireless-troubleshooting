@@ -1,9 +1,10 @@
 ---
 ansible_connection: ansible.netcommon.network_cli
 ansible_network_os: community.network.aruba
-ansible_user: "{{ vault_mc_user }}"
-ansible_password: "{{ vault_mc_password }}"
+# mc_user / mc_password / mc_enable_password come from inventory/group_vars/all/credentials.yml (git-ignored)
+ansible_user: "{{ mc_user }}"
+ansible_password: "{{ mc_password }}"
 ansible_become: true
 ansible_become_method: enable
-ansible_become_password: "{{ vault_mc_enable_password }}"
+ansible_become_password: "{{ mc_enable_password }}"
 ansible_command_timeout: 60
